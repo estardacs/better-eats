@@ -237,6 +237,17 @@
       border-top: 1px solid #f3f4f6;
     }
     #be-log-toggle:hover { color: #374151; }
+    #be-crossfeed-section { margin-top: 4px; }
+    .be-crossfeed-header { display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 6px; }
+    .be-crossfeed-countbadge { background: #111827; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700; }
+    .be-crossfeed-item { padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
+    .be-crossfeed-item:last-child { border-bottom: none; }
+    .be-crossfeed-name { display: block; color: #111827; font-weight: 500; font-size: 12px; text-decoration: none; line-height: 1.3; }
+    .be-crossfeed-name:hover { text-decoration: underline; }
+    .be-crossfeed-meta { display: flex; align-items: center; gap: 5px; margin-top: 3px; flex-wrap: wrap; }
+    .be-crossfeed-badge { background: #fef3c7; color: #92400e; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 600; }
+    .be-crossfeed-time { color: #9ca3af; font-size: 10px; margin-left: auto; }
+    #be-crossfeed-list { max-height: 160px; overflow-y: auto; margin-bottom: 6px; }
   `);
 
   // ─── Main logic ───────────────────────────────────────────────────────────
@@ -287,6 +298,8 @@
       log(`Resultado final: ${stats.visible} visibles / ${stats.hidden} ocultos / ${stats.total} total`);
       panelLog(`Mostrando ${stats.visible} de ${stats.total} restaurantes`);
       renderStats();
+      saveDiscovery();
+      renderCrossFeedDeals();
     }
 
     function scheduleStats() {
@@ -372,6 +385,130 @@
       } else if ($(el).is(":hidden")) {
         $(el).show();
       }
+    }
+
+    // ─── Cross-feed discovery cache ───────────────────────────────────────
+    const CACHE_KEY = "betterEats_cache";
+    const CACHE_TTL = 21600000; // 6 hours
+
+    function loadCache() {
+      const raw = window.localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }
+
+    function pruneCache(cache) {
+      const now = Date.now();
+      let pruned = 0;
+      Object.keys(cache).forEach(function (slug) {
+        if (now - cache[slug].lastSeen > CACHE_TTL) {
+          delete cache[slug];
+          pruned++;
+        }
+      });
+      if (pruned > 0) log("Cache: " + pruned + " entradas expiradas eliminadas");
+      return cache;
+    }
+
+    function getCardDeals(el) {
+      const text = $(el).text();
+      return Object.keys(dealStrs).filter(function (k) {
+        return text.toUpperCase().includes(dealStrs[k].toUpperCase());
+      }).map(function (k) { return dealStrs[k]; });
+    }
+
+    function saveDiscovery() {
+      if (!feedEl) return;
+      const cache = pruneCache(loadCache());
+      let saved = 0;
+      $("> div", feedEl).each(function () {
+        const el = $(this);
+        const deals = getCardDeals(el);
+        if (deals.length === 0) return;
+        const href = $("a", el).first().attr("href") || "";
+        const match = href.match(/\/store\/([^/?]+)/);
+        if (!match) return;
+        const slug = match[1];
+        cache[slug] = {
+          name: getRestaurantName(el),
+          href: href.split("?")[0],
+          deals: deals,
+          lastSeen: Date.now(),
+        };
+        saved++;
+      });
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+      log("Cache guardado: " + saved + " con ofertas (" + Object.keys(cache).length + " total)");
+    }
+
+    function getDomSlugs() {
+      const slugs = {};
+      if (!feedEl || !jQuery.contains(document, feedEl[0])) return slugs;
+      $("> div", feedEl).each(function () {
+        const href = $("a", $(this)).first().attr("href") || "";
+        const match = href.match(/\/store\/([^/?]+)/);
+        if (match) slugs[match[1]] = true;
+      });
+      return slugs;
+    }
+
+    function getActiveDealStrings() {
+      return Object.keys(dealStrs)
+        .filter(function (k) { return storedData[k]; })
+        .map(function (k) { return dealStrs[k]; });
+    }
+
+    function relativeTime(ts) {
+      const diff = Math.floor((Date.now() - ts) / 60000);
+      if (diff < 2)  return "hace un momento";
+      if (diff < 60) return "hace " + diff + "m";
+      const h = Math.floor(diff / 60);
+      if (h < 24)    return "hace " + h + "h";
+      return "hace " + Math.floor(h / 24) + "d";
+    }
+
+    function renderCrossFeedDeals() {
+      if (!panelReady) return;
+      const cache    = loadCache();
+      const domSlugs = getDomSlugs();
+      const active   = getActiveDealStrings();
+
+      const missing = Object.keys(cache).reduce(function (acc, slug) {
+        if (domSlugs[slug]) return acc;
+        const entry = cache[slug];
+        if (active.length > 0) {
+          const matches = entry.deals.some(function (d) {
+            return active.some(function (a) { return d.toUpperCase() === a.toUpperCase(); });
+          });
+          if (!matches) return acc;
+        }
+        acc.push({ slug: slug, entry: entry });
+        return acc;
+      }, []).sort(function (a, b) { return b.entry.lastSeen - a.entry.lastSeen; });
+
+      const section = $("#be-crossfeed-section");
+      if (missing.length === 0) { section.hide(); return; }
+
+      section.show();
+      $("#be-crossfeed-count").text(missing.length);
+      const list = $("#be-crossfeed-list");
+      list.empty();
+
+      missing.forEach(function (item) {
+        const badges = item.entry.deals.map(function (d) {
+          return '<span class="be-crossfeed-badge">' + d + '</span>';
+        }).join(" ");
+        list.append(
+          '<div class="be-crossfeed-item">' +
+            '<a class="be-crossfeed-name" href="' + item.entry.href + '" target="_blank">' +
+              item.entry.name +
+            '</a>' +
+            '<div class="be-crossfeed-meta">' + badges +
+              '<span class="be-crossfeed-time">' + relativeTime(item.entry.lastSeen) + '</span>' +
+            '</div>' +
+          '</div>'
+        );
+      });
+      log("Cross-feed: " + missing.length + " restaurantes adicionales con ofertas");
     }
 
     // ─── Observer ─────────────────────────────────────────────────────────
@@ -490,6 +627,16 @@
               placeholder="mcdonald&#10;subway&#10;pizza hut">${storedData.excludeList.filter(x => x.trim()).join("\n")}</textarea>
             <div class="be-hint">Un nombre por linea. Oculta cualquier restaurante que contenga ese texto.</div>
 
+            <div id="be-crossfeed-section" style="display:none">
+              <div class="be-section be-crossfeed-header" id="be-crossfeed-toggle">
+                <span>Tambien con ofertas</span>
+                <span id="be-crossfeed-count" class="be-crossfeed-countbadge">0</span>
+                <span id="be-crossfeed-chevron" style="float:right">▾</span>
+              </div>
+              <div id="be-crossfeed-list"></div>
+              <div class="be-hint" id="be-crossfeed-hint">Vistos en otro feed — no estan en este. Clic para abrir restaurante.</div>
+            </div>
+
           </div>
 
           <div id="be-log-toggle">ver log interno</div>
@@ -527,6 +674,14 @@
         logOpen = !logOpen;
         $("#be-log-area").toggle(logOpen);
         $(this).text(logOpen ? "ocultar log" : "ver log interno");
+      });
+
+      // Cross-feed section toggle
+      let crossfeedOpen = true;
+      $(document).on("click", "#be-crossfeed-toggle", function () {
+        crossfeedOpen = !crossfeedOpen;
+        $("#be-crossfeed-list, #be-crossfeed-hint").toggle(crossfeedOpen);
+        $("#be-crossfeed-chevron").text(crossfeedOpen ? "▾" : "▸");
       });
 
       // Pill filter buttons
