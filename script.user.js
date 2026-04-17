@@ -61,6 +61,14 @@
 
   jQuery(document).ready(function ($) {
     let itemClass = "";
+    let feedEl = null;
+
+    function refilterAll() {
+      if (!feedEl) return;
+      $("> div", feedEl).each(function () {
+        autoFilterItems($(this));
+      });
+    }
 
     function autoFilterItems(el) {
       if (itemClass === "") {
@@ -220,9 +228,7 @@
         bogoFilter.on("click", function () {
           storedData.bogoOnly = !storedData.bogoOnly;
           window.localStorage.setItem("ubereats", JSON.stringify(storedData));
-          $("> div", mainFeed).each(function () {
-            autoFilterItems($(this));
-          });
+          refilterAll();
         });
 
         const sp10Filter = jQuery(`
@@ -241,9 +247,7 @@
         sp10Filter.on("click", function () {
           storedData.spend10Get8 = !storedData.spend10Get8;
           window.localStorage.setItem("ubereats", JSON.stringify(storedData));
-          $("> div", mainFeed).each(function () {
-            autoFilterItems($(this));
-          });
+          refilterAll();
         });
 
         const hasOffersFilter = jQuery(`
@@ -262,9 +266,7 @@
         hasOffersFilter.on("click", function () {
           storedData.hasOffers = !storedData.hasOffers;
           window.localStorage.setItem("ubereats", JSON.stringify(storedData));
-          $("> div", mainFeed).each(function () {
-            autoFilterItems($(this));
-          });
+          refilterAll();
         });
       }
       appendTypesFilter();
@@ -284,9 +286,7 @@
         jQuery("#deliveryTimeMax").on("blur", function () {
           storedData.deliveryTimeMax = parseFloat($(this).val());
           window.localStorage.setItem("ubereats", JSON.stringify(storedData));
-          $("> div", mainFeed).each(function () {
-            autoFilterItems($(this));
-          });
+          refilterAll();
         });
       }
       appendDeliveryTimeFilter();
@@ -309,9 +309,7 @@
         jQuery("#excludeList").on("blur", function () {
           storedData.excludeList = $(this).val().split("\n");
           window.localStorage.setItem("ubereats", JSON.stringify(storedData));
-          $("> div", mainFeed).each(function () {
-            autoFilterItems($(this));
-          });
+          refilterAll();
         });
       }
       appendExclusionFilter();
@@ -337,7 +335,8 @@
       { onlyOnce: true },
       function () {
         // 'this' refers to the newly created element
-        var mainFeed = $(this);
+        feedEl = $(this);
+        var mainFeed = feedEl;
 
         // update the grid to 5 per row
         mainFeed.css("grid-template-columns", "repeat(5, 1fr)");
