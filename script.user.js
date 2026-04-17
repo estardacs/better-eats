@@ -70,7 +70,12 @@
       });
     }
 
-    function autoFilterItems(el) {
+    function autoFilterItems(el, retries = 3) {
+      if ($(el).text().trim() === "") {
+        if (retries > 0) setTimeout(() => autoFilterItems(el, retries - 1), 600);
+        return;
+      }
+
       if (itemClass === "") {
         itemClass = $(el).attr("class");
       }
