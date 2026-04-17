@@ -74,7 +74,7 @@
     #be-panel {
       position: fixed;
       bottom: 20px;
-      right: 20px;
+      left: 20px;
       width: 310px;
       background: #fff;
       border-radius: 14px;
@@ -319,11 +319,14 @@
       scheduleStats();
     }
 
-    function autoFilterItems(el, retries = 3) {
+    function autoFilterItems(el, retries = 6) {
       const text = $(el).text().trim();
-      if (text === "") {
+      // A fully loaded card always has a delivery time ("min")
+      // If it's missing, the offer badges haven't rendered yet either
+      const isReady = text.length > 20 && text.includes("min");
+      if (!isReady) {
         if (retries > 0) {
-          setTimeout(() => autoFilterItems(el, retries - 1), 600);
+          setTimeout(() => autoFilterItems(el, retries - 1), 700);
         }
         return;
       }
@@ -621,6 +624,16 @@
       $("> div", feedEl).each(function () {
         autoFilterItems($(this));
       });
+
+      // Second pass after 3s to catch cards whose offer badges loaded late
+      setTimeout(function () {
+        log("Segundo pase de filtrado (badges con carga lenta)...");
+        panelLog("Verificando ofertas que cargaron tarde...");
+        $("> div", feedEl).each(function () {
+          autoFilterItems($(this));
+        });
+        scheduleStats();
+      }, 3000);
 
       scheduleStats();
 
