@@ -5,7 +5,7 @@ Better Eats es un script de Tampermonkey que mejora la experiencia de Uber Eats 
 > **Basado en el trabajo original de [pxue](https://github.com/pxue/better-eats).  
 > Lo único que hice fue traducir y adaptar los filtros de ofertas al español (Chile).**
 
-![Screenshot 2024-08-16 at 7 10 06 PM](https://github.com/user-attachments/assets/fb4193d1-1f82-4fe2-9eb6-aae6514fa74d)
+<img width="1918" height="987" alt="image" src="https://github.com/user-attachments/assets/8c560055-8f53-444a-a899-0cdaa212089c" />
 
 ### Instalación:
 1. Instala [Tampermonkey](https://tampermonkey.net/)
