@@ -79,11 +79,7 @@
         }
 
         function checkDeel(key) {
-          const perkDiv = $(`div:icontains('${key}'):not(:has(div))`, el);
-          if (perkDiv.length > 0) {
-            return true;
-          }
-          return false;
+          return $(el).text().toUpperCase().includes(key.toUpperCase());
         }
 
         // 2. check deels
