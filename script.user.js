@@ -34,11 +34,16 @@
     }
   }
 
-  // ─── Page context ─────────────────────────────────────────────────────────
-  const onFeedPage  = window.location.href.includes("/feed");
-  const onStorePage = window.location.href.includes("/store");
+  // ─── Page context (detectado por DOM, no por URL — SPA) ───────────────────
   log("Iniciando script en: " + window.location.pathname);
-  log("Contexto de pagina: " + (onFeedPage ? "FEED (correcto para filtrar)" : onStorePage ? "STORE (pagina de un restaurante)" : "otro"));
+
+  function getFeedUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const pl = params.get("pl");
+    let url = "https://www.ubereats.com/feed?diningMode=DELIVERY";
+    if (pl) url += "&pl=" + encodeURIComponent(pl);
+    return url;
+  }
 
   // ─── Strings de ofertas (Uber Eats Chile) ─────────────────────────────────
   const dealStrs = {
@@ -161,36 +166,22 @@
       text-transform: uppercase; letter-spacing: 0.8px;
       color: #9ca3af; margin: 14px 0 8px;
     }
-    .be-row {
-      display: flex; align-items: center;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #f3f4f6;
+    #be-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+    .be-pill {
+      border-radius: 20px;
+      padding: 7px 14px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer;
+      border: 2px solid #e5e7eb;
+      background: #fff;
+      color: #374151;
+      font-family: inherit;
+      transition: all 0.15s;
+      line-height: 1;
     }
-    .be-row:last-of-type { border-bottom: none; }
-    .be-info { flex: 1; }
-    .be-name { font-weight: 500; color: #111827; }
-    .be-desc { font-size: 11px; color: #9ca3af; margin-top: 1px; }
-    .be-toggle {
-      position: relative; width: 40px; height: 22px;
-      flex-shrink: 0; margin-left: 10px;
-    }
-    .be-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-    .be-slider {
-      position: absolute; inset: 0;
-      background: #d1d5db; border-radius: 22px;
-      cursor: pointer; transition: background 0.2s;
-    }
-    .be-slider:before {
-      content: ''; position: absolute;
-      width: 16px; height: 16px;
-      left: 3px; top: 3px;
-      background: white; border-radius: 50%;
-      transition: transform 0.2s;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    }
-    .be-toggle input:checked + .be-slider { background: #111827; }
-    .be-toggle input:checked + .be-slider:before { transform: translateX(18px); }
+    .be-pill:hover { border-color: #9ca3af; color: #111827; }
+    .be-pill.on { background: #111827; color: #fff; border-color: #111827; }
+    .be-pill.on:hover { background: #374151; border-color: #374151; }
     .be-input, .be-textarea {
       width: 100%;
       border: 1px solid #e5e7eb;
@@ -402,22 +393,54 @@
       }
     });
 
+    // ─── Auto-load "Mostrar mas" ───────────────────────────────────────────
+    function autoLoad(maxAttempts) {
+      if (maxAttempts <= 0) {
+        log("Auto-carga: maximo de intentos alcanzado");
+        panelLog("Carga completa (" + (feedEl ? $("> div", feedEl).length : 0) + " restaurantes)");
+        refilterAll(); scheduleStats(); return;
+      }
+
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+
+      setTimeout(function () {
+        const btn = $("button, [role='button']").filter(function () {
+          const t = $(this).text().trim().toLowerCase();
+          return (t.includes("mostrar") && t.includes("m")) || t.includes("ver m") || t.includes("show more");
+        }).filter(":visible").first();
+
+        if (btn.length) {
+          const prevCount = feedEl ? $("> div", feedEl).length : 0;
+          log('Auto-carga: clickeando "' + btn.text().trim() + '" — total actual: ' + prevCount + ' (intentos restantes: ' + maxAttempts + ')');
+          panelLog("Cargando mas resultados... (" + prevCount + " cargados)");
+          btn[0].click();
+          setTimeout(function () {
+            const newCount = feedEl ? $("> div", feedEl).length : 0;
+            if (newCount > prevCount) {
+              autoLoad(maxAttempts - 1);
+            } else {
+              log("Auto-carga: no se cargaron nuevos resultados — lista completa");
+              panelLog("Lista completa — " + newCount + " restaurantes. Aplicando filtros...");
+              refilterAll(); scheduleStats();
+            }
+          }, 2500);
+        } else {
+          log("Auto-carga: no hay boton de cargar mas — lista completa");
+          panelLog("Ya estan todos los restaurantes. Aplicando filtros...");
+          refilterAll(); scheduleStats();
+        }
+      }, 1000);
+    }
+
     // ─── Build UI ─────────────────────────────────────────────────────────
     setTimeout(function () {
-      const contextClass = onFeedPage ? "ok" : onStorePage ? "info" : "warn";
-      const contextIcon  = onFeedPage ? "✓" : onStorePage ? "ℹ" : "⚠";
-      const contextMsg   = onFeedPage
-        ? "Estas en la pagina de Ofertas. Los filtros estan activos."
-        : onStorePage
-        ? "Estas viendo un restaurante especifico. Los filtros aplican en la pagina de Ofertas."
-        : "Ve a ubereats.com/cl/feed para usar los filtros.";
 
       const panel = $(`
         <div id="be-panel">
 
           <div id="be-header">
             <div id="be-header-left">
-              <span id="be-dot" class="${onFeedPage ? 'waiting' : 'inactive'}"></span>
+              <span id="be-dot" class="inactive"></span>
               <span>Better Eats</span>
               <span id="be-badge">...</span>
             </div>
@@ -426,9 +449,9 @@
 
           <div id="be-body">
 
-            <div id="be-context" class="${contextClass}">
-              <span id="be-context-icon">${contextIcon}</span>
-              <span>${contextMsg}</span>
+            <div id="be-context" class="warn">
+              <span id="be-context-icon">⏳</span>
+              <span id="be-context-msg">Esperando que cargue el feed de Uber Eats...</span>
             </div>
 
             <div id="be-stats">
@@ -449,42 +472,18 @@
             </div>
 
             <div class="be-section">Filtros de oferta</div>
-            <div class="be-row">
-              <div class="be-info">
-                <div class="be-name">Solo 2X1</div>
-                <div class="be-desc">Muestra unicamente restaurantes con oferta 2 por 1</div>
-              </div>
-              <label class="be-toggle">
-                <input type="checkbox" id="be-bogo" ${storedData.bogoOnly ? "checked" : ""}>
-                <span class="be-slider"></span>
-              </label>
+            <div id="be-pills">
+              <button class="be-pill${storedData.bogoOnly ? ' on' : ''}" data-key="bogoOnly">2X1</button>
+              <button class="be-pill${storedData.spend10Get8 ? ' on' : ''}" data-key="spend10Get8">Gasta y ahorra</button>
+              <button class="be-pill${storedData.hasOffers ? ' on' : ''}" data-key="hasOffers">Con ofertas</button>
             </div>
-            <div class="be-row">
-              <div class="be-info">
-                <div class="be-name">Gasta y ahorra</div>
-                <div class="be-desc">Ej: "Gasta $12.000, ahorra $4.000"</div>
-              </div>
-              <label class="be-toggle">
-                <input type="checkbox" id="be-spend" ${storedData.spend10Get8 ? "checked" : ""}>
-                <span class="be-slider"></span>
-              </label>
-            </div>
-            <div class="be-row">
-              <div class="be-info">
-                <div class="be-name">Con ofertas disponibles</div>
-                <div class="be-desc">Tiene al menos una oferta activa</div>
-              </div>
-              <label class="be-toggle">
-                <input type="checkbox" id="be-offers" ${storedData.hasOffers ? "checked" : ""}>
-                <span class="be-slider"></span>
-              </label>
-            </div>
+            <div class="be-hint" style="margin-top:8px">Toca un filtro para activarlo. Si no estas en la pagina de Ofertas, te llevara automaticamente.</div>
 
             <div class="be-section">Tiempo de entrega</div>
             <input type="number" id="be-delivery" class="be-input"
               placeholder="Ej: 35   (0 o vacio = sin limite)"
               value="${storedData.deliveryTimeMax || ""}">
-            <div class="be-hint">Oculta restaurantes con tiempo de entrega mayor a este valor (en minutos)</div>
+            <div class="be-hint">Oculta restaurantes con tiempo mayor a este valor (minutos)</div>
 
             <div class="be-section">Lista negra</div>
             <textarea id="be-exclude" class="be-textarea"
@@ -493,12 +492,13 @@
 
           </div>
 
-          <div id="be-log-toggle">ver log de consola interno</div>
+          <div id="be-log-toggle">ver log interno</div>
           <div id="be-log-area"></div>
 
           <div id="be-footer">
             <button class="be-btn be-btn-ghost" id="be-reset">Limpiar filtros</button>
-            <button class="be-btn be-btn-dark"  id="be-apply">Recargar pagina</button>
+            <button class="be-btn be-btn-ghost" id="be-load-all">Cargar todo</button>
+            <button class="be-btn be-btn-dark"  id="be-apply">Recargar</button>
           </div>
 
         </div>
@@ -526,34 +526,34 @@
       $("#be-log-toggle").on("click", function () {
         logOpen = !logOpen;
         $("#be-log-area").toggle(logOpen);
-        $(this).text(logOpen ? "ocultar log" : "ver log de consola interno");
+        $(this).text(logOpen ? "ocultar log" : "ver log interno");
       });
 
-      // Toggles
-      $("#be-bogo").on("change", function () {
-        storedData.bogoOnly = $(this).is(":checked");
-        log("Filtro 2X1: " + (storedData.bogoOnly ? "ACTIVADO" : "desactivado"));
-        panelLog("Filtro 2X1: " + (storedData.bogoOnly ? "activado" : "desactivado"), storedData.bogoOnly ? "" : "warn");
-        saveData(); refilterAll();
-      });
-      $("#be-spend").on("change", function () {
-        storedData.spend10Get8 = $(this).is(":checked");
-        log("Filtro Gasta y ahorra: " + (storedData.spend10Get8 ? "ACTIVADO" : "desactivado"));
-        panelLog("Filtro Gasta y ahorra: " + (storedData.spend10Get8 ? "activado" : "desactivado"), storedData.spend10Get8 ? "" : "warn");
-        saveData(); refilterAll();
-      });
-      $("#be-offers").on("change", function () {
-        storedData.hasOffers = $(this).is(":checked");
-        log("Filtro Con ofertas: " + (storedData.hasOffers ? "ACTIVADO" : "desactivado"));
-        panelLog("Filtro Con ofertas: " + (storedData.hasOffers ? "activado" : "desactivado"), storedData.hasOffers ? "" : "warn");
-        saveData(); refilterAll();
+      // Pill filter buttons
+      $(document).on("click", ".be-pill", function () {
+        const key = $(this).data("key");
+        storedData[key] = !storedData[key];
+        $(this).toggleClass("on", storedData[key]);
+        const label = $(this).text();
+        log("Filtro " + label + ": " + (storedData[key] ? "ACTIVADO" : "desactivado"));
+        panelLog("Filtro " + label + ": " + (storedData[key] ? "activado" : "desactivado"), storedData[key] ? "" : "warn");
+        saveData();
+
+        if (!feedEl) {
+          // Not on feed — navigate to it with location preserved
+          log("Feed no detectado — navegando a pagina de Ofertas...");
+          panelLog("Redirigiendo a la pagina de Ofertas...");
+          window.location.href = getFeedUrl();
+        } else {
+          refilterAll();
+        }
       });
 
       // Delivery time
       $("#be-delivery").on("blur", function () {
         const val = parseFloat($(this).val()) || 0;
         storedData.deliveryTimeMax = val;
-        log("Tiempo maximo de entrega: " + (val > 0 ? val + " min" : "sin limite"));
+        log("Tiempo maximo: " + (val > 0 ? val + " min" : "sin limite"));
         panelLog("Tiempo maximo: " + (val > 0 ? val + " min" : "sin limite"));
         saveData(); refilterAll();
       });
@@ -573,9 +573,7 @@
         storedData.hasOffers = false;
         storedData.deliveryTimeMax = 0;
         storedData.excludeList = [];
-        $("#be-bogo").prop("checked", false);
-        $("#be-spend").prop("checked", false);
-        $("#be-offers").prop("checked", false);
+        $(".be-pill").removeClass("on");
         $("#be-delivery").val("");
         $("#be-exclude").val("");
         log("Todos los filtros limpiados");
@@ -583,18 +581,31 @@
         saveData(); refilterAll();
       });
 
-      // Apply (reload)
+      // Load all
+      $("#be-load-all").on("click", function () {
+        if (!feedEl) {
+          panelLog("Primero ve a la pagina de Ofertas de Uber Eats", "warn");
+          return;
+        }
+        log("Iniciando carga automatica de todos los restaurantes...");
+        panelLog("Cargando todos los restaurantes...");
+        autoLoad(20);
+      });
+
+      // Reload page
       $("#be-apply").on("click", function () {
         log("Recargando pagina...");
         location.reload();
       });
 
       log("Panel UI listo");
-      panelLog("Panel listo. Esperando feed de Uber Eats...");
+      panelLog("Panel listo. Esperando feed...");
 
-      // If feed already arrived before panel was ready, update dot now
       if (feedEl) {
         $("#be-dot").removeClass("waiting inactive").addClass("active");
+        $("#be-context").attr("class", "ok");
+        $("#be-context-icon").text("✓");
+        $("#be-context-msg").text("Feed detectado. Filtros activos.");
         updateStats();
       }
 
@@ -609,6 +620,9 @@
       panelLog("Feed detectado. Filtrando...");
 
       $("#be-dot").removeClass("waiting inactive").addClass("active");
+      $("#be-context").attr("class", "ok");
+      $("#be-context-icon").text("✓");
+      $("#be-context-msg").text("Feed detectado. Filtros activos.");
 
       feedEl.css("grid-template-columns", "repeat(5, 1fr)");
       feedEl.css("gap", "20px 8px");
