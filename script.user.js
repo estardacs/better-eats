@@ -78,7 +78,8 @@
       function checkShouldHide() {
         // 1. check name filters
         for (let ex of storedData.excludeList) {
-          if ($("a", el).attr("href").includes(ex)) {
+          const href = $("a", el).attr("href") || "";
+          if (href.includes(ex)) {
             return [true, "exclude"];
           }
           if ($(`div:icontains('${ex}'):not(:has(div))`, el).length > 0) {
@@ -335,6 +336,7 @@
       { onlyOnce: true },
       function () {
         // 'this' refers to the newly created element
+        if (feedEl) return;
         feedEl = $(this);
         var mainFeed = feedEl;
 
